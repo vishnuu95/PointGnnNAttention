@@ -36,6 +36,7 @@ class MultiLayerFastLocalGraphModelV2(object):
             layer_config: A list of layer configurations.
             mode: string, one of 'train', 'eval', 'test'.
         """
+        print("In multi layer fast local graph")
         self.num_classes = num_classes
         self.box_encoding_len = box_encoding_len
         if regularizer_type is None:
