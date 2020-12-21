@@ -108,6 +108,7 @@ def multi_layer_downsampling_random(points_xyz, base_voxel_size, levels=[1],
     xmin, ymin, zmin = np.amin(points_xyz, axis=0)
     xyz_offset = np.asarray([[xmin, ymin, zmin]])
     xyz_zeros = np.asarray([0, 0, 0], dtype=np.float32)
+    print("In downsampling random, points_xyz size, : ", len(points_xyz))
     vertex_coord_list = [points_xyz]
     keypoint_indices_list = []
     last_level = 0
@@ -127,16 +128,20 @@ def multi_layer_downsampling_random(points_xyz, base_voxel_size, levels=[1],
                     base_voxel_size*level*np.random.random((1,3))) \
                         // (base_voxel_size*level)
             xyz_idx = xyz_idx.astype(np.int32)
+            # get the max value of each dimension
             dim_x, dim_y, dim_z = np.amax(xyz_idx, axis=0) + 1
+            # eq to flatnnening
             keys = xyz_idx[:, 0]+xyz_idx[:, 1]*dim_x+xyz_idx[:, 2]*dim_y*dim_x
             num_points = xyz_idx.shape[0]
 
             voxels_idx = {}
             for pidx in range(len(last_points_xyz)):
+                # key to each voxel
                 key = keys[pidx]
                 if key in voxels_idx:
                     voxels_idx[key].append(pidx)
                 else:
+                    # create voxel key value pair. Add pidx to voxel                     
                     voxels_idx[key] = [pidx]
 
             downsampled_xyz = []
@@ -149,7 +154,10 @@ def multi_layer_downsampling_random(points_xyz, base_voxel_size, levels=[1],
             keypoint_indices_list.append(
                 np.expand_dims(np.array(downsampled_xyz_idx),axis=1))
         last_level = level
-
+        # vertex_coord_list : list of original points and chosen keypoint
+        # vertices and so on at diff scales
+        # list of indices(in the entire point cloud list) of key point
+        # keypoints are one single points chosen from a non empty voxel
     return vertex_coord_list, keypoint_indices_list
 
 def gen_multi_level_local_graph_v3(
@@ -182,8 +190,9 @@ def gen_multi_level_local_graph_v3(
         vertex_coord_list, keypoint_indices_list = \
             multi_layer_downsampling_random(
                 points_xyz, base_voxel_size, scales, add_rnd3d=add_rnd3d)
-    # Create edges
+    # Create edges 
     edges_list = []
+    # creates initial vertex list
     for config in level_configs:
         graph_level = config['graph_level']
         gen_graph_fn = get_graph_generate_fn(config['graph_gen_method'])
@@ -192,6 +201,14 @@ def gen_multi_level_local_graph_v3(
         center_xyz = vertex_coord_list[graph_level+1]
         vertices = gen_graph_fn(points_xyz, center_xyz, **method_kwarg)
         edges_list.append(vertices)
+    # vertex_coord_list is  a list of 3 things. 
+    # - orig point cloud, downsampled pc acc to scale 0, same acc to scale 1
+    # keypoint_idx_lst 
+    # - List of point idx thats randomly selected point of non empty voxels
+    # Edges list
+    # - List of point idx and the corresponding point's' keypoint idx which it
+    # belongs to  (inside the given radius of keypoint)
+
     return vertex_coord_list, keypoint_indices_list, edges_list
 
 def gen_disjointed_rnn_local_graph_v3(
@@ -206,16 +223,27 @@ def gen_disjointed_rnn_local_graph_v3(
         center_xyz = center_xyz/scale
     nbrs = NearestNeighbors(
         radius=radius,algorithm='ball_tree', n_jobs=1, ).fit(points_xyz)
+    # print("nbrs size: ", len(nbrs))
     indices = nbrs.radius_neighbors(center_xyz, return_distance=False)
     if num_neighbors > 0:
         if neighbors_downsample_method == 'random':
             indices = [neighbors if neighbors.size <= num_neighbors else
                 np.random.choice(neighbors, num_neighbors, replace=False)
                 for neighbors in indices]
+    # Reduces one dimension
+    # vertices_v contains list of points inidices which are neighbors of some
+    # keypoint or the other.
     vertices_v = np.concatenate(indices)
+
+    # for each center point index, create neigbors num of tags with i as 
+    # the value of each tag.
+
+    # vertices i is corresponding list of center_xyz index that 
+    # element of veritices_v is a neighbor of
     vertices_i = np.concatenate(
         [i*np.ones(neighbors.size, dtype=np.int32)
             for i, neighbors in enumerate(indices)])
+    # point index and neighbor index
     vertices = np.array([vertices_v, vertices_i]).transpose()
     return vertices
 

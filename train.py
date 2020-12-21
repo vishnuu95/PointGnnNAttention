@@ -22,6 +22,9 @@ from util.config_util import save_config, save_train_config, \
     load_train_config, load_config
 from util.summary_util import write_summary_scale
 
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 parser = argparse.ArgumentParser(description='Training of PointGNN')
 parser.add_argument('train_config_path', type=str,
                    help='Path to train_config')
@@ -89,7 +92,7 @@ def fetch_data(frame_idx):
     (vertex_coord_list, keypoint_indices_list, edges_list) = \
         graph_generate_fn(cam_rgb_points.xyz, **config['graph_gen_kwargs'])
     if config['input_features'] == 'irgb':
-        input_v = cam_rgb_points.attr
+        input_v = cam_rgb_points.attrs
     elif config['input_features'] == '0rgb':
         input_v = np.hstack([np.zeros((cam_rgb_points.attr.shape[0], 1)),
             cam_rgb_points.attr[:, 1:]])
@@ -200,34 +203,42 @@ for gi in range(NUM_GPU):
                     dtype=tf.float32, shape=[None, 1])
 
             t_vertex_coord_list = [
-                tf.placeholder(dtype=tf.float32, shape=[None, 3])]
+                tf.placeholder(dtype=tf.float32, shape=[None, 3])] # add 1 place holder
             for _ in range(len(config['graph_gen_kwargs']['level_configs'])):
                 t_vertex_coord_list.append(
-                    tf.placeholder(dtype=tf.float32, shape=[None, 3]))
+                    tf.placeholder(dtype=tf.float32, shape=[None, 3])) # add two more place holders to list
 
             t_edges_list = []
             for _ in range(len(config['graph_gen_kwargs']['level_configs'])):
                 t_edges_list.append(
                     tf.placeholder(dtype=tf.int32, shape=[None, None]))
-
+            # one for each graph level.     
             t_keypoint_indices_list = []
             for _ in range(len(config['graph_gen_kwargs']['level_configs'])):
                 t_keypoint_indices_list.append(
                     tf.placeholder(dtype=tf.int32, shape=[None, 1]))
-
+            # one for each graph level.         
             t_class_labels = tf.placeholder(dtype=tf.int32, shape=[None, 1])
             t_encoded_gt_boxes = tf.placeholder(
                 dtype=tf.float32, shape=[None, 1, BOX_ENCODING_LEN])
+            # Just one for final box output
             t_valid_gt_boxes = tf.placeholder(
                 dtype=tf.float32, shape=[None, 1, 1])
+            #NOT SURE
             t_is_training = tf.placeholder(dtype=tf.bool, shape=[])
+            #NOT SURE
 
             model = get_model(config['model_name'])(num_classes=NUM_CLASSES,
                 box_encoding_len=BOX_ENCODING_LEN, mode='train',
                 **config['model_kwargs'])
+            # Pass in each all model configs. Model is MultiLayerFastLocalGraphModelV2
+            # with default layers type of keys, scatter_max_pooling, graph_auto_center_net, 
+            # classaware predictor.
             t_logits, t_pred_box = model.predict(
                 t_initial_vertex_features, t_vertex_coord_list,
                 t_keypoint_indices_list, t_edges_list, t_is_training)
+            # Pass in the place holders. based on layer number, it 
+            # chooses the predictor class and applys graph related functions
             t_probs = model.postprocess(t_logits)
             t_predictions = tf.argmax(t_probs, axis=-1, output_type=tf.int32)
             t_loss_dict = model.loss(t_logits, t_class_labels, t_pred_box,
@@ -508,6 +519,9 @@ batch_gradient_list = []
 with tf.Session(graph=graph,
     config=tf.ConfigProto(
     allow_soft_placement=True, gpu_options=gpu_options,)) as sess:
+    # if tf.test.gpu_device_name():
+    #     print('****************** Default GPU device******************: {}'.format(tf.test.gpu_device_name()))
+    # print("Starting session...........")    
     sess.run(tf.variables_initializer(tf.global_variables()))
     states = tf.train.get_checkpoint_state(train_config['train_dir'])
     if states is not None:
@@ -515,13 +529,19 @@ with tf.Session(graph=graph,
         saver.restore(sess, states.model_checkpoint_path)
         saver.recover_last_checkpoints(states.all_model_checkpoint_paths)
     previous_step = sess.run(global_step)
+    print("Previous Step: ", previous_step)
     local_variables_initializer = tf.variables_initializer(tf.local_variables())
+    print("num test sample", NUM_TEST_SAMPLE)
+    #NUM_TEST_SAMPLE = number of files in train car split. 3260
+    # previous step? 
     for epoch_idx in range((previous_step*batch_size)//NUM_TEST_SAMPLE,
     train_config['max_epoch']):
         sess.run(local_variables_initializer)
+        print("Epoch Idx: {}".format(epoch_idx))
         start_time = time.time()
         frame_idx_list = np.random.permutation(NUM_TEST_SAMPLE)
         for batch_idx in range(0, NUM_TEST_SAMPLE-batch_size+1, batch_size):
+            print("Batch Idx: {}".format(batch_idx))
             mid_time = time.time()
             device_batch_size = batch_size//(COPY_PER_GPU*NUM_GPU)
             total_feed_dict = {}
@@ -529,9 +549,14 @@ with tf.Session(graph=graph,
                 batch_frame_idx_list = frame_idx_list[
                     batch_idx+\
                     gi*device_batch_size:batch_idx+(gi+1)*device_batch_size]
+                print("Reached dataprovider.")    
                 input_v, vertex_coord_list, keypoint_indices_list, edges_list, \
                 cls_labels, encoded_boxes, valid_boxes \
                     = data_provider.provide_batch(batch_frame_idx_list)
+                # print("Datashape {}, {}, {}, {}, {}, {}, {}".format(len(input_v),
+                #  len(vertex_coord_list), vertex_coord_list[0].shape,
+                #   vertex_coord_list[1].shape, vertex_coord_list[2].shape,
+                #   keypoint_indices_list[0].shape, keypoint_indices_list[1].shape))
                 t_initial_vertex_features = \
                     input_tensor_sets[gi]['t_initial_vertex_features']
                 t_class_labels = input_tensor_sets[gi]['t_class_labels']
@@ -543,6 +568,8 @@ with tf.Session(graph=graph,
                     input_tensor_sets[gi]['t_keypoint_indices_list']
                 t_vertex_coord_list = \
                     input_tensor_sets[gi]['t_vertex_coord_list']
+                # print(t_vertex_coord_list, gi)
+                    
                 feed_dict = {
                     t_initial_vertex_features: input_v,
                     t_class_labels: cls_labels,
@@ -555,7 +582,19 @@ with tf.Session(graph=graph,
                     dict(zip(t_keypoint_indices_list, keypoint_indices_list)))
                 feed_dict.update(
                     dict(zip(t_vertex_coord_list, vertex_coord_list)))
+                # print(vertex_coord_list, gi)
                 total_feed_dict.update(feed_dict)
+                # print("#######################")
+                # print("SHAPES>.................")
+                # print(input_v.shape)
+                # print(cls_labels.shape)
+                # print(encoded_boxes.shape)
+                # print(valid_boxes.shape)
+                # print(edges_list.shape)
+                # print(keypoint_indices_list.shape)
+                # print(vertex_coord_list.shape)
+                # print(keypoint_indices_list)
+                # print("#######################")
             if train_config.get('is_pseudo_batch', False):
                 tf_gradient = [g for g, v in grads_cross_gpu]
                 batch_gradient = sess.run(tf_gradient,
