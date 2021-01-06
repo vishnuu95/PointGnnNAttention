@@ -361,7 +361,8 @@ class GraphNetAutoCenter(object):
 		auto_offset_MLP_depth_list=None,
 		auto_offset_MLP_normalization_type='fused_BN_center',
 		auto_offset_MLP_feature_activation_type = 'ReLU',
-		):
+		): 
+
 		"""apply one layer graph network on a graph. .
 
 		Args:
@@ -404,7 +405,6 @@ class GraphNetAutoCenter(object):
 
 		# Prepare initial edge features
 		# hi, hj
-
 		
 		d_vertex_features = tf.gather(input_vertex_features, edges[:, 1]) #***********
 		hi = tf.concat(
@@ -474,8 +474,11 @@ class GraphNetAutoCenter(object):
 		edges[:,1], tf.shape(input_vertex_features)[0], name='scatter_sum')
 			print("aggregated_edge_features shape ", aggregated_edge_features.shape)
 
+			ids_order = tf.argsort(seg_order)
+			aggregated_edge_features_ordered = tf.gather(aggregated_edge_features, ids_order)
+
 			with tf.variable_scope('combined_features'):
-				update_features = self._update_fn(aggregated_edge_features,
+				update_features = self._update_fn(aggregated_edge_features_ordered,
 					Ks=update_MLP_depth_list, is_logits=True,
 					normalization_type='fused_BN_center',
 					activation_type=update_MLP_activation_type)
