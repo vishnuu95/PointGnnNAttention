@@ -540,6 +540,7 @@ with tf.Session(graph=graph,
         print("Epoch Idx: {}".format(epoch_idx))
         start_time = time.time()
         frame_idx_list = np.random.permutation(NUM_TEST_SAMPLE)
+        count = 0
         for batch_idx in range(0, NUM_TEST_SAMPLE-batch_size+1, batch_size):
             print("Batch Idx: {}".format(batch_idx))
             mid_time = time.time()
@@ -549,6 +550,7 @@ with tf.Session(graph=graph,
                 batch_frame_idx_list = frame_idx_list[
                     batch_idx+\
                     gi*device_batch_size:batch_idx+(gi+1)*device_batch_size]
+                print(len(batch_frame_idx_list))
                 print("Reached dataprovider.")    
                 input_v, vertex_coord_list, keypoint_indices_list, edges_list, \
                 cls_labels, encoded_boxes, valid_boxes \

@@ -408,11 +408,11 @@ class GraphNetAutoCenter(object):
 		
 		d_vertex_features = tf.gather(input_vertex_features, edges[:, 1]) #***********
 		hi = tf.concat(
-			[d_vertex_features, d_vertex_coordinates],
-			 axis=-1) #*****************
+			[d_vertex_features, d_vertex_coordinates-s_vertex_coordinates],
+			 axis=-1) #***************** fi; xi-xj
 		hj = tf.concat(
-			[s_vertex_features, s_vertex_coordinates],
-			 axis=-1) #*****************
+			[s_vertex_features, s_vertex_coordinates-d_vertex_coordinates],
+			 axis=-1) #***************** fj; xj-xi
 		print("hi, hj", hi.shape, hj.shape)
 		# hi = [d_vertex_coordinates; d_vertex_features]
 		# hj = [s_vertex_coordinates; s_vertex_features]
